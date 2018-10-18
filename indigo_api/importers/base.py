@@ -51,7 +51,10 @@ class Importer(LocaleBasedMatcher):
 
     def shell(self, cmd):
         self.log.info("Running %s" % cmd)
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	try:
+        	p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+	except OSError:
+		raise OSError(cmd)
         stdout, stderr = p.communicate()
         self.log.info("Subprocess exit code: %s, stdout=%d bytes, stderr=%d bytes" % (p.returncode, len(stdout), len(stderr)))
 

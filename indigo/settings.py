@@ -89,13 +89,13 @@ WSGI_APPLICATION = 'indigo.wsgi.application'
 SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
 
 # where does the pdftotext binary live?
-INDIGO_PDFTOTEXT = 'pdftotext'
+INDIGO_PDFTOTEXT = '/usr/bin/pdftotext'
 
 # Database
 # https://docs.djangoproject.com/en/1.7/ref/settings/#databases
 
 import dj_database_url
-db_config = dj_database_url.config(default='postgres://indigo:indigo@localhost:5432/indigo')
+db_config = dj_database_url.config(default='postgres://indigo:rangesnaivestockyflares@localhost:5432/indigo')
 db_config['ATOMIC_REQUESTS'] = False
 DATABASES = {
     'default': db_config,
