@@ -16,8 +16,8 @@
           <div class="form-group col">
             <label for="document_language" class="required">Language</label>
             <select id="document_language" class="form-control">
-              {% for opt in languages %}
-              <option value="{{ opt.language.iso_639_2B }}">{{ opt.language.name_en }}</option>
+              {% for opt in indigo_languages %}
+              <option value="{{ opt.code }}">{{ opt.language.name_en }}</option>
               {% endfor %}
             </select>
           </div>
@@ -28,7 +28,17 @@
 
           <div class="form-row">
             <div class="col-sm-8">
-              <select class="form-control" id="document_expression_date"></select>
+              <select class="form-control" id="document_expression_date">
+                {% for amendment in work.amendments_with_initial %}
+                <option value="{{ amendment.date|date:"Y-m-d" }}">
+                  {{ amendment.date|date:"Y-m-d"}} -
+                  {% if amendment.initial %}
+                  initial publication
+                  {% else %}
+                  amendment
+                  {% endif %}
+                {% endfor %}
+              </select>
               <p class="form-text text-muted">Date of this version of the document, either the publication date or an amendment date</p>
             </div>
             <div class="col">

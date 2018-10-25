@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>{% block title %}{% endblock %} - Indigo</title>
+    <title>{% block title %}{% endblock %} – Indigo</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="">
     <meta name="csrf-token" content="{{ csrf_token }}">
@@ -17,7 +17,7 @@
 
   </head>
   <body {% block body-attributes %}{% endblock %} class="{% block body-class %}
-    {% if user.is_authenticated %}authenticated{% else %}unauthenticated{% endif %}
+    {% if request.user.is_authenticated %}authenticated{% else %}unauthenticated{% endif %}
     {% endblock %}">
     <div id="error-box" class="alert alert-danger" style="display: none">
       <button type="button" class="close">&times;</button>
@@ -26,9 +26,6 @@
     </div>
 
     {% block page-content %}{% endblock page-content %}
-
-    {% include "user/_profile_modal.html" %}
-    {% include "user/_change_password_modal.html" %}
 
     {% block js %}
     {% javascript "js" %}

@@ -104,7 +104,7 @@ class AtomFeed(feedgenerator.Atom1Feed):
             handler.addQuickElement("im:commencement-date", doc.commencement_date.isoformat())
 
         if doc.publication_date:
-            handler.addQuickElement("im:publication-date", doc.publication_date)
+            handler.addQuickElement("im:publication-date", doc.publication_date.isoformat())
         if doc.publication_name:
             handler.addQuickElement("im:publication-name", doc.publication_name)
         if doc.publication_number:
@@ -159,7 +159,7 @@ class AtomRenderer(XMLRenderer):
         return feed.writeString('utf-8')
 
     def add_item(self, feed, doc):
-        url = self.serializer.get_published_url(doc, with_date=True)
+        url = self.serializer.get_published_url(doc)
         feed.add_item(
             unique_id=url,
             pubdate=doc.created_at,

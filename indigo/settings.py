@@ -32,18 +32,30 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = (
-    # local traditions
-    'indigo_pl',
+    # Indigo local traditions
     'indigo_za',
 
-    # the Indigo API
-    'indigo_api',
-    # the Indigo editor application
-    'indigo_app',
+    # Indigo social
+    'indigo_social',
+    'pinax.badges',
+
     # the Indigo act resolver
     'indigo_resolver',
     'indigo_slack',
 
+    # the Indigo editor application
+    'indigo_app',
+    # the Indigo API
+    'indigo_api',
+
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    # installations should include social account providers, such as
+    # allauth.socialaccount.providers.google
+    'captcha',
+
+    'django.contrib.sites',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -54,10 +66,7 @@ INSTALLED_APPS = (
     'pipeline',
     'rest_framework',
     'rest_framework.authtoken',
-    'rest_auth',
     'django_filters',
-    'django_extensions',
-    'django_nose',
 
     # required by the Indigo API
     'taggit',
@@ -101,11 +110,11 @@ DATABASES = {
     'default': db_config,
 }
 
+SITE_ID = 1
+
 # Internationalization
 # https://docs.djangoproject.com/en/1.7/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
 
 USE_I18N = True
@@ -116,11 +125,6 @@ USE_TZ = True
 
 # CORS
 CORS_ORIGIN_ALLOW_ALL = True
-
-
-# Auth
-LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = '/library'
 
 
 # Templates
@@ -139,6 +143,7 @@ TEMPLATES = [
                 'django.template.context_processors.tz',
                 'django.contrib.messages.context_processors.messages',
                 'indigo_app.context_processors.general',
+                'indigo_app.context_processors.models',
             ]
         }
     }
@@ -172,6 +177,7 @@ else:
         },
     }
 
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/1.7/howto/static-files/
 
@@ -181,7 +187,7 @@ ASSETS_URL_EXPIRE = False
 # for each Django app
 
 # where the compiled assets go
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = 'staticfiles'
 # the URL for assets
 STATIC_URL = '/static/'
 
@@ -219,29 +225,10 @@ PIPELINE = {
                 'javascript/table-editor.js',
                 'javascript/indigo/models.js',
                 'javascript/indigo/traditions.js',
-                'javascript/indigo/views/user.js',
-                'javascript/indigo/views/reset_password.js',
-                'javascript/indigo/views/document_defined_terms.js',
-                'javascript/indigo/views/document_references.js',
-                'javascript/indigo/views/document_amendments.js',
-                'javascript/indigo/views/document_attachments.js',
-                'javascript/indigo/views/document_properties.js',
-                'javascript/indigo/views/document_toc.js',
-                'javascript/indigo/views/work.js',
-                'javascript/indigo/views/work_amendments.js',
-                'javascript/indigo/views/work_chooser.js',
-                'javascript/indigo/views/table_editor.js',
-                'javascript/indigo/views/document_editor.js',
-                'javascript/indigo/views/document_revisions.js',
-                'javascript/indigo/views/document_activity.js',
-                'javascript/indigo/views/document.js',
-                'javascript/indigo/views/library.js',
-                'javascript/indigo/views/error_box.js',
-                'javascript/indigo/views/sidebar.js',
-                'javascript/indigo/views/progress.js',
-                'javascript/indigo/views/import.js',
-                'javascript/indigo/views/annotations.js',
-                'javascript/indigo/timestamps.js',
+                'javascript/indigo/*.js',
+                'javascript/indigo/views/*.js',
+                'javascript/indigo/views/**/*.js',
+                'javascript/indigo/**/*.js',
                 'javascript/indigo.js',
             ),
             'output_filename': 'app.js',
@@ -275,42 +262,60 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.TokenAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'indigo_api.utils.PageNumberPagination',
     'TEST_REQUEST_DEFAULT_FORMAT': 'json',
-    'PAGE_SIZE': 250,
-}
-
-# Django Rest Auth
-REST_AUTH_SERIALIZERS = {
-    'USER_DETAILS_SERIALIZER': 'indigo_app.serializers.UserDetailsSerializer',
 }
 
 
 SUPPORT_EMAIL = os.environ.get('SUPPORT_EMAIL')
+INDIGO_ORGANISATION = os.environ.get('INDIGO_ORGANISATION', 'Indigo Platform')
+INDIGO_URL = os.environ.get('INDIGO_URL', 'http://localhost:8000')
+RESOLVER_URL = os.environ.get('RESOLVER_URL', INDIGO_URL + "/resolver/resolve")
 
-DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', SUPPORT_EMAIL)
+DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', '%s %s' % (INDIGO_ORGANISATION, SUPPORT_EMAIL))
 EMAIL_HOST = os.environ.get('DJANGO_EMAIL_HOST')
 EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD')
 EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', 25))
 EMAIL_SUBJECT_PREFIX = '[Indigo] '
 
+# Auth
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+)
 
-INDIGO_ORGANISATION = os.environ.get('INDIGO_ORGANISATION', 'Indigo Platform')
-INDIGO_URL = os.environ.get('INDIGO_URL', 'http://localhost:8000')
-RESOLVER_URL = os.environ.get('RESOLVER_URL', INDIGO_URL + "/resolver/resolve")
+# Django all-auth settings
+ACCOUNT_ADAPTER = 'indigo_app.adapter.ModifiedAccountAdapter'
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = True
+ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = '/accounts/email/'
+ACCOUNT_PRESERVE_USERNAME_CASING = False
+ACCOUNT_SESSION_REMEMBER = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_USER_DISPLAY = 'indigo_api.serializers.user_display_name'
+ACCOUNT_FORMS = {
+    'signup': 'indigo_app.forms.UserSignupForm'
+}
+ACCOUNT_SIGNUP_ENABLED = True
+LOGIN_URL = 'account_login'
+LOGIN_REDIRECT_URL = '/accounts/profile/'
+
+# Google recaptcha
+RECAPTCHA_PUBLIC_KEY = os.environ.get('RECAPTCHA_PUBLIC_KEY', '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI')
+RECAPTCHA_PRIVATE_KEY = os.environ.get('RECAPTCHA_PRIVATE_KEY', '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe')
+NOCAPTCHA = True
+
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
 GOOGLE_ANALYTICS_ID = os.environ.get('GOOGLE_ANALYTICS_ID')
-# server-side google analytics
-GOOGLE_ANALYTICS_INCLUDE_PATH = ['/api/']
-if GOOGLE_ANALYTICS_ID and not DEBUG:
-    MIDDLEWARE += ('indigo.middleware.GoogleAnalyticsMiddleware',)
 
 # disable email in development
 if DEBUG:
@@ -318,6 +323,16 @@ if DEBUG:
 
 # slack integration
 SLACK_WEBHOOK_URL = os.environ.get('SLACK_WEBHOOK_URL')
+
+
+# Messages
+from django.contrib.messages import constants as messages
+MESSAGE_TAGS = {
+    messages.INFO: 'alert alert-primary',
+    messages.SUCCESS: 'alert alert-success',
+    messages.WARNING: 'alert alert-warning',
+    messages.ERROR: 'alert alert-danger',
+}
 
 
 # Logging

@@ -7,7 +7,7 @@ from indigo_api.tests.fixtures import *  # noqa
 
 
 class AnalysisTestCase(APITestCase):
-    fixtures = ['user', 'work']
+    fixtures = ['countries', 'user', 'editor', 'work']
 
     def setUp(self):
         self.client.default_format = 'json'
@@ -22,6 +22,8 @@ class AnalysisTestCase(APITestCase):
     def test_link_terms(self):
         response = self.client.post('/api/analysis/link-terms', {
             'document': {
+                'expression_date': '2001-01-01',
+                'language': 'eng',
                 'content': document_fixture(xml=u"""
 <section id="section-1">
   <num>1.</num>

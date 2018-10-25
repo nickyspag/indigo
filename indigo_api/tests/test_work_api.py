@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 
-from nose.tools import *  # noqa
+from nose.tools import assert_equal, assert_not_equal
 from rest_framework.test import APITestCase
 from django.test.utils import override_settings
 
-from indigo_api.tests.fixtures import *  # noqa
+from indigo_api.models import Work
 
 
 # Disable pipeline storage - see https://github.com/cyberdelia/django-pipeline/issues/277
 @override_settings(STATICFILES_STORAGE='pipeline.storage.PipelineStorage', PIPELINE_ENABLED=False)
 class WorkAPITest(APITestCase):
-    fixtures = ['user', 'work', 'drafts', 'published']
+    fixtures = ['countries', 'user', 'editor', 'work', 'drafts', 'published']
 
     def setUp(self):
         self.client.login(username='email@example.com', password='password')
@@ -54,7 +54,7 @@ class WorkAPITest(APITestCase):
         assert_equal(response.status_code, 400)
 
     def test_update_publication_date(self):
-        response = self.client.post('/api/works', {'frbr_uri': '/za/act/2005/2', 'title': 'test'})
+        response = self.client.post('/api/works', {'frbr_uri': '/za/act/2005/2', 'title': 'test', 'language': 'eng', 'country': 'za'})
         assert_equal(response.status_code, 201)
         id = response.data['id']
 
@@ -79,11 +79,10 @@ class WorkAPITest(APITestCase):
             'date': '2010-01-01',
             'repealing_title': 'Test Act',
             'repealing_uri': '/za/act/1998/2',
-            'repealing_id': None,
         })
 
     def test_update_null_repeal(self):
-        response = self.client.post('/api/documents', {'frbr_uri': '/za/act/1998/2'})
+        response = self.client.post('/api/documents', {'frbr_uri': '/za/act/1998/2', 'expression_date': '2001-01-01', 'language': 'eng'})
         assert_equal(response.status_code, 201)
         id = response.data['id']
 
@@ -94,30 +93,24 @@ class WorkAPITest(APITestCase):
         assert_equal(response.status_code, 200)
         assert_equal(response.data['repeal'], None)
 
-    def test_create_new_expression_with_existing(self):
-        response = self.client.post('/api/works/1/expressions_at?date=2019-01-01')
-        assert_equal(response.status_code, 201)
-        id = response.data['id']
-
-        response = self.client.get('/api/documents/%s' % id)
+    def test_filters(self):
+        response = self.client.get('/api/works?country=za')
         assert_equal(response.status_code, 200)
-        assert_equal(response.data['draft'], True)
-        assert_equal(response.data['expression_date'], '2019-01-01')
+        assert_not_equal(len(response.data['results']), 0)
 
-        response = self.client.get('/api/documents/%s/content' % id)
+        response = self.client.get('/api/works?country=xx')
         assert_equal(response.status_code, 200)
-        assert_in('tester', response.data['content'])
+        assert_equal(len(response.data['results']), 0)
 
-    def test_create_new_expression_without_existing(self):
-        response = self.client.post('/api/works/6/expressions_at?date=2019-01-01')
-        assert_equal(response.status_code, 201)
-        id = response.data['id']
+    def test_publication_date_updates_documents(self):
+        work = Work.objects.get(frbr_uri='/za/act/1945/1')
+        initial = work.initial_expressions()
+        assert_equal(initial[0].publication_date.strftime('%Y-%m-%d'), "1945-10-12")
 
-        response = self.client.get('/api/documents/%s' % id)
+        response = self.client.patch('/api/works/%s' % work.id, {'publication_date': '1945-12-12'})
         assert_equal(response.status_code, 200)
-        assert_equal(response.data['draft'], True)
-        assert_equal(response.data['expression_date'], '2019-01-01')
 
-        response = self.client.get('/api/documents/%s/content' % id)
-        assert_equal(response.status_code, 200)
-        assert_not_in('tester', response.data['content'])
+        work = Work.objects.get(frbr_uri='/za/act/1945/1')
+        initial = list(work.initial_expressions().all())
+        assert_equal(initial[0].publication_date.strftime('%Y-%m-%d'), "1945-12-12")
+        assert_equal(len(initial), 1)

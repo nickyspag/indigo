@@ -2,7 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Language, Country, Locality, Editor, Publication
+from .models import Editor, Publication
+from indigo_api.models import Language, Country, Locality
 
 
 class EditorInline(admin.StackedInline):
@@ -10,6 +11,7 @@ class EditorInline(admin.StackedInline):
     can_delete = False
     verbose_name = 'Editor details'
     verbose_name_plural = 'editor'
+    filter_horizontal = ('permitted_countries',)
 
 
 class LocalityInline(admin.TabularInline):

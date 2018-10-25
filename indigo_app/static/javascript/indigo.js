@@ -31,7 +31,7 @@ $(function() {
 
       } else if (xhr.status == 403) {
         // permission denied
-        if (Indigo.userView.model.authenticated()) {
+        if (Indigo.user.authenticated()) {
           Indigo.errorView.show("You aren't allowed to do that.");
         } else {
           Indigo.errorView.show("Please log in first.");
@@ -118,7 +118,6 @@ $(function() {
   Indigo.user = new Indigo.User(Indigo.Preloads.user || {
     permissions: [],
   });
-  Indigo.userView = new Indigo.UserView();
 
   // setup the document library
   Indigo.library = new Indigo.Library();
@@ -128,23 +127,34 @@ $(function() {
 
   // setup the collection of works
   Indigo.works = new Indigo.WorksCollection();
+  Indigo.works.country = Indigo.Preloads.country_code || Indigo.user.get('country_code');
   if (Indigo.Preloads.works) {
-    Indigo.works.country = Indigo.Preloads.country_code || Indigo.user.get('country_code');
     Indigo.works.reset({results: Indigo.Preloads.works}, {parse: true});
-  } else {
-    Indigo.works.setCountry(Indigo.Preloads.country_code || Indigo.user.get('country_code'));
   }
 
-  // what view must we load?
-  var view = $('body').data('backbone-view');
-  if (view && Indigo[view]) {
-    Indigo.view = new Indigo[view]();
-    Indigo.view.render();
-  }
+  // what views must we load?
+  var views = ($('body').data('backbone-view') || '').split(" ");
+  Indigo.views = _.reject(_.map(views, function(name) {
+    if (name && Indigo[name]) {
+      var view = new Indigo[name]();
+      Indigo.view = Indigo.view || view;
+      return view;
+    }
+  }), function(v) { return !v; });
+  _.invoke(Indigo.views, 'render');
+
 
   // osx vs windows
   var isOSX = navigator.userAgent.indexOf("OS X") > -1;
   $('body')
     .toggleClass("win", !isOSX)
     .toggleClass("osx", isOSX);
+
+  // prevent navigating away from dirty views
+  $(window).on('beforeunload', function(e) {
+    if (Indigo.view && Indigo.view.isDirty && Indigo.view.isDirty()) {
+      e.preventDefault();
+      return 'You will lose your changes!';
+    }
+  });
 });

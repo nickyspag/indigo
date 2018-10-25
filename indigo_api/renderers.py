@@ -17,7 +17,7 @@ from languages_plus.models import Language
 from sass_processor.processor import SassProcessor
 
 from .serializers import NoopSerializer
-from .models import Document, Colophon, DEFAULT_LANGUAGE
+from .models import Document, Colophon
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +58,19 @@ def file_candidates(document, prefix='', suffix=''):
     options.append(doctype)
 
     return [prefix + f + suffix for f in options]
+
+
+def resolver_url(request, resolver):
+    if resolver in ['no', 'none']:
+        return ''
+
+    if resolver:
+        if resolver.startswith('http'):
+            return resolver
+        else:
+            return request.build_absolute_uri('/resolver/%s/resolve' % resolver)
+
+    return settings.RESOLVER_URL
 
 
 class XSLTRenderer(object):
@@ -134,7 +147,8 @@ class HTMLRenderer(object):
         self.standalone = standalone
         self.coverpage = coverpage
         self.no_stub_content = no_stub_content
-        self.resolver = resolver
+        self.resolver = resolver or settings.RESOLVER_URL
+        self.media_url = ''
 
     def render(self, document, element=None):
         """ Render this document to HTML.
@@ -142,7 +156,7 @@ class HTMLRenderer(object):
         :param document: document to render if +element+ is None
         :param element: element to render (optional)
         """
-        # use this to render the bulk of the document with the Cobalt XSLT renderer
+        # use this to render the bulk of the document
         renderer = self._xml_renderer(document)
 
         if element is not None:
@@ -167,6 +181,7 @@ class HTMLRenderer(object):
             'content_html': content_html,
             'renderer': renderer,
             'coverpage': self.coverpage,
+            'resolver_url': self.resolver,
         }
 
         # Now render some boilerplate around it.
@@ -178,15 +193,7 @@ class HTMLRenderer(object):
             return render_to_string(template_name, context)
 
     def find_colophon(self, document):
-        colophon = None
-
-        if document.country:
-            colophon = Colophon.objects.filter(country__iso=document.country.upper()).first()
-
-        if not colophon:
-            colophon = Colophon.objects.filter(country=None).first()
-
-        return colophon
+        return Colophon.objects.filter(country=document.work.country).first()
 
     def find_template(self, document):
         """ Return the filename of a template to use to render this document.
@@ -199,7 +206,7 @@ class HTMLRenderer(object):
             try:
                 log.debug("Looking for %s" % option)
                 if get_template(option):
-                    log.debug("Using xsl %s" % option)
+                    log.debug("Using template %s" % option)
                     return option
             except TemplateDoesNotExist:
                 pass
@@ -224,21 +231,12 @@ class HTMLRenderer(object):
 
     def _xml_renderer(self, document):
         params = {
-            'resolverUrl': self.resolver_url(),
-            'manifestationUrl': document.manifestation_url(settings.INDIGO_URL),
-            'lang': document.language,
+            'resolverUrl': self.resolver,
+            'mediaUrl': self.media_url or '',
+            'lang': document.language.code,
         }
 
         return XSLTRenderer(xslt_params=params, xslt_filename=self.find_xslt(document))
-
-    def resolver_url(self):
-        if self.resolver in ['no', 'none']:
-            return ''
-
-        if self.resolver and self.resolver.startswith('http'):
-            return self.resolver
-
-        return settings.RESOLVER_URL
 
 
 class HTMLResponseRenderer(StaticHTMLRenderer):
@@ -249,10 +247,13 @@ class HTMLResponseRenderer(StaticHTMLRenderer):
             return super(HTMLResponseRenderer, self).render(document, media_type, renderer_context)
 
         view = renderer_context['view']
+        request = renderer_context['request']
+
         renderer = HTMLRenderer()
-        renderer.no_stub_content = getattr(renderer_context['view'], 'no_stub_content', False)
-        renderer.standalone = renderer_context['request'].GET.get('standalone') == '1'
-        renderer.resolver = renderer_context['request'].GET.get('resolver')
+        renderer.no_stub_content = getattr(view, 'no_stub_content', False)
+        renderer.standalone = request.GET.get('standalone') == '1'
+        renderer.resolver = resolver_url(request, request.GET.get('resolver'))
+        renderer.media_url = request.GET.get('media-url', '')
 
         if not hasattr(view, 'component') or (view.component == 'main' and not view.subcomponent):
             renderer.coverpage = renderer_context['request'].GET.get('coverpage', '1') == '1'
@@ -306,7 +307,7 @@ class PDFRenderer(HTMLRenderer):
             colophon = self.render_colophon(document=document, documents=documents)
             if colophon:
                 colophon_f = tempfile.NamedTemporaryFile(suffix='.html')
-                colophon_f.write(colophon)
+                colophon_f.write(colophon.encode('utf-8'))
                 colophon_f.flush()
                 args.extend(['cover', 'file://' + colophon_f.name])
 
@@ -315,7 +316,7 @@ class PDFRenderer(HTMLRenderer):
             args.extend(['toc', '--xsl-style-sheet', toc_xsl])
 
         with tempfile.NamedTemporaryFile(suffix='.html') as f:
-            f.write(html)
+            f.write(html.encode('utf-8'))
             f.flush()
             args.append('file://' + f.name)
             return self._wkhtmltopdf(args, **options)
@@ -359,6 +360,8 @@ class PDFRenderer(HTMLRenderer):
         margin_bottom = 36.3 - footer_spacing
         margin_left = 25.6
 
+        toc_xsl = get_template('export/pdf_toc.xsl').origin.name
+
         options = {
             'page-size': 'A4',
             'margin-top': '%.2fmm' % margin_top,
@@ -374,7 +377,7 @@ class PDFRenderer(HTMLRenderer):
             'footer-spacing': '%.2f' % footer_spacing,
             'footer-font-name': footer_font,
             'footer-font-size': footer_font_size,
-            'xsl-style-sheet': os.path.abspath('indigo_api/templates/export/pdf_toc.xsl'),
+            'xsl-style-sheet': toc_xsl,
         }
 
         return options
@@ -398,7 +401,7 @@ class EPUBRenderer(HTMLRenderer):
 
         self.book.set_identifier(document.doc.frbr_uri.expression_uri())
         self.book.set_title(document.title)
-        self.book.set_language(self.language_for(document.language) or 'en')
+        self.book.set_language(document.language.language.iso)
         self.book.add_author(settings.INDIGO_ORGANISATION)
 
         self.add_colophon(document)
@@ -415,7 +418,7 @@ class EPUBRenderer(HTMLRenderer):
         self.book.set_title('%d documents' % len(documents))
 
         # language
-        langs = list(set(self.language_for(d.language) or 'en' for d in documents))
+        langs = list(set(d.language.language.iso for d in documents))
         self.book.set_language(langs[0])
         for lang in langs[1:]:
             self.book.add_metadata('DC', 'language', lang)
@@ -487,6 +490,7 @@ class EPUBRenderer(HTMLRenderer):
             'content_html': '',
             'renderer': self.renderer,
             'coverpage': True,
+            'resolver_url': self.resolver,
         }
         titlepage = render_to_string(template_name, context)
 
@@ -555,8 +559,8 @@ class EPUBRenderer(HTMLRenderer):
             html = '<div class="' + wrap + '">' + html + '</div>'
         return html
 
-    def language_for(self, lang=None):
-        lang = Language.objects.filter(iso_639_2T=lang or DEFAULT_LANGUAGE).first()
+    def language_for(self, lang):
+        lang = Language.objects.filter(iso_639_2T=lang).first()
         if lang:
             return lang.iso
 
@@ -577,12 +581,13 @@ class PDFResponseRenderer(BaseRenderer):
             return ''
 
         view = renderer_context['view']
-
         filename = self.get_filename(data, view)
         renderer_context['response']['Content-Disposition'] = 'inline; filename=%s' % filename
+        request = renderer_context['request']
+
         renderer = PDFRenderer()
         renderer.no_stub_content = getattr(renderer_context['view'], 'no_stub_content', False)
-        renderer.resolver = renderer_context['request'].GET.get('resolver')
+        renderer.resolver = resolver_url(request, request.GET.get('resolver'))
 
         # check the cache
         key = self.cache_key(data, view)
@@ -640,12 +645,13 @@ class EPUBResponseRenderer(PDFResponseRenderer):
             return ''
 
         view = renderer_context['view']
+        request = renderer_context['request']
 
         filename = self.get_filename(data, view)
         renderer_context['response']['Content-Disposition'] = 'inline; filename=%s' % filename
         renderer = EPUBRenderer()
         renderer.no_stub_content = getattr(renderer_context['view'], 'no_stub_content', False)
-        renderer.resolver = renderer_context['request'].GET.get('resolver')
+        renderer.resolver = resolver_url(request, request.GET.get('resolver'))
 
         # check the cache
         key = self.cache_key(data, view)

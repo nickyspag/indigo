@@ -11,10 +11,13 @@
 
     initialize: function() {
       this.breadcrumbTemplate = Handlebars.compile($(this.breadcrumbTemplate).html());
-      this.expressions = this.model.work.documents();
+      this.expressions = new Indigo.Library(Indigo.Preloads.expressions);
+      // ensure that this.model is in the expression list, not a duplicate
+      this.expressions.remove(this.expressions.get(this.model.get('id')));
+      this.expressions.add(this.model);
 
       this.listenTo(this.model, 'change:title change:expression_date change:draft sync change:frbr_uri', this.render);
-      this.listenTo(this.expressions, 'sync change', this.render);
+      this.listenTo(this.expressions, 'sync change reset', this.render);
     },
 
     getTitle: function() {
@@ -30,10 +33,11 @@
       // breadcrumb
       var country = Indigo.countries[this.model.get('country')],
           locality = this.model.get('locality'),
-          dates = this.model.work.expressionDates(),
+          dates = _.unique(this.expressions.pluck('expression_date')),
           docs = this.expressions,
           current_id = this.model.get('id');
       locality = locality ? country.localities[locality] : null;
+      dates.sort();
       dates.reverse();
 
       var expressions = _.map(dates, function(date) {
@@ -57,7 +61,7 @@
     },
   });
 
-  // The DocumentView is the primary view on the document detail page.
+  // The DocumentDetailView is the primary view on the document detail page.
   // It is responsible for managing the other views and allowing the user to
   // save their changes. It has nested sub views that handle separate portions
   // of the larger view page.
@@ -76,13 +80,13 @@
   //
   //   DocumentRevisionsView - handles walking through revisions to a document
   //
-  // When saving a document, the DocumentView tells the children to save their changes.
+  // When saving a document, the DocumentDetailView tells the children to save their changes.
   // In turn, they trigger 'dirty' and 'clean' events when their models change or
-  // once they've been saved. The DocumentView uses those signals to enable/disable
+  // once they've been saved. The DocumentDetailView uses those signals to enable/disable
   // the save button.
   //
   //
-  Indigo.DocumentView = Backbone.View.extend({
+  Indigo.DocumentDetailView = Backbone.View.extend({
     el: 'body',
     events: {
       'click .menu .dropdown-submenu > a': 'stopMenuClick',
@@ -109,7 +113,7 @@
       $('.menu').on('click', '.disabled a', _.bind(this.stopMenuClick));
 
       // get it from the library
-      this.document = Indigo.library.get(Indigo.Preloads.document_id);
+      this.document = new Indigo.Document(Indigo.Preloads.document);
       this.document.work = new Indigo.Work(Indigo.Preloads.work);
 
       this.document.on('change', this.setDirty, this);
@@ -149,9 +153,6 @@
 
       this.activityView = new Indigo.DocumentActivityView({document: this.document});
 
-      // prevent the user from navigating away without saving changes
-      $(window).on('beforeunload', _.bind(this.windowUnloading, this));
-
       // pretend we've fetched it, this sets up additional handlers
       this.document.trigger('sync');
 
@@ -170,11 +171,8 @@
       });
     },
 
-    windowUnloading: function(e) {
-      if (this.propertiesView.dirty || this.bodyEditorView.dirty || this.bodyEditorView.editing) {
-        e.preventDefault();
-        return 'You will lose your changes!';
-      }
+    isDirty: function(e) {
+      return this.propertiesView.dirty || this.bodyEditorView.isDirty();
     },
 
     setDirty: function() {
@@ -342,9 +340,8 @@
       if (!confirm("Are you sure you want to change the work this document is linked to?")) return;
 
       var document = this.document;
-      var chooser = new Indigo.WorkChooserView({});
+      var chooser = new Indigo.WorkChooserView({country: document.get('country')});
 
-      chooser.setFilters({country: document.get('country')});
       chooser.choose(document.work);
       chooser.showModal().done(function(chosen) {
         if (chosen) {

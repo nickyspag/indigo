@@ -18,7 +18,10 @@ class LocaleBasedRegistry(object):
     def for_document(self, topic, document):
         """ Find an appropriate helper for this document.
         """
-        return self.for_locale(topic, country=document.country, locality=document.locality, language=document.language)
+        return self.for_locale(topic, country=document.country, locality=document.locality, language=document.language.code)
+
+    def for_work(self, topic, work):
+        return self.for_locale(topic, country=work.country, locality=work.locality, language=None)
 
     def for_locale(self, topic, country=None, language=None, locality=None):
         """ Find an appropriate importer for this locale description. Tightest match wins.
@@ -41,11 +44,11 @@ class LocaleBasedRegistry(object):
         if matches:
             return matches[-1][0]
 
-    def register(self, topic):
+    def register(self, topic, name=None):
         """ Class decorator that registers a new class with the registry.
         """
         def wrapper(cls):
-            self.registry[topic][cls.__name__] = cls
+            self.registry[topic][name or cls.__name__] = cls
             return cls
         return wrapper
 

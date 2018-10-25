@@ -5,22 +5,48 @@ from django.http import Http404
 from rest_framework.reverse import reverse
 from rest_framework import mixins, viewsets, renderers
 from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated, BasePermission
+from rest_framework.authentication import SessionAuthentication, TokenAuthentication
 from cobalt import FrbrUri
 
-from ..serializers import DocumentSerializer
+from ..serializers import PublishedDocumentSerializer, MediaAttachmentSerializer
 from ..renderers import AkomaNtosoRenderer, PDFResponseRenderer, EPUBResponseRenderer, HTMLResponseRenderer, ZIPResponseRenderer
 from ..atom import AtomRenderer, AtomFeed
 
-from .documents import DocumentViewMixin
+from .documents import DocumentViewMixin, DocumentResourceView, SearchView
 from .attachments import view_attachment_by_filename
+from ..models import Attachment, Country
 
 
 FORMAT_RE = re.compile('\.([a-z0-9]+)$')
 
 
+class PublishedDocumentPermission(BasePermission):
+    """ Published document permissions.
+    """
+    def has_permission(self, request, view):
+        return request.user.has_perm('indigo_api.view_published_document')
+
+
+class MediaViewSet(DocumentResourceView, viewsets.ModelViewSet):
+    """ Attachment view for published documents, under frbr-uri/media.json
+    """
+    queryset = Attachment.objects
+    serializer_class = MediaAttachmentSerializer
+    # TODO: perms
+    permission_classes = (IsAuthenticated,)
+
+    def filter_queryset(self, queryset):
+        return queryset.filter(document=self.document).all()
+
+
+class PublicAPIMixin(object):
+    authentication_classes = (SessionAuthentication, TokenAuthentication)
+    permission_classes = (IsAuthenticated, PublishedDocumentPermission)
+
+
 class PublishedDocumentDetailView(DocumentViewMixin,
+                                  PublicAPIMixin,
                                   mixins.RetrieveModelMixin,
                                   mixins.ListModelMixin,
                                   viewsets.GenericViewSet):
@@ -44,12 +70,10 @@ class PublishedDocumentDetailView(DocumentViewMixin,
     # only published documents
     queryset = DocumentViewMixin.queryset.published()
 
-    serializer_class = DocumentSerializer
-    pagination_class = PageNumberPagination
+    serializer_class = PublishedDocumentSerializer
     # these determine what content negotiation takes place
     renderer_classes = (renderers.JSONRenderer, AtomRenderer, PDFResponseRenderer, EPUBResponseRenderer, AkomaNtosoRenderer, HTMLResponseRenderer,
                         ZIPResponseRenderer)
-    permission_classes = (AllowAny,)
 
     def initial(self, request, **kwargs):
         super(PublishedDocumentDetailView, self).initial(request, **kwargs)
@@ -66,7 +90,7 @@ class PublishedDocumentDetailView(DocumentViewMixin,
         # that document matches, otherwise we'll assume they're trying to
         # list documents with a prefix URI match.
         try:
-            self.frbr_uri = FrbrUri.parse(self.kwargs['frbr_uri'])
+            self.parse_frbr_uri(self.kwargs['frbr_uri'])
 
             # ensure we haven't mistaken '/za-cpt/act/by-law/2011/full.atom' for a URI
             if self.frbr_uri.number in ['full', 'summary'] and self.format_kwarg == 'atom':
@@ -103,7 +127,7 @@ class PublishedDocumentDetailView(DocumentViewMixin,
         document = self.get_object()
 
         # asking for a media attachment?
-        if self.component == 'media':
+        if self.component == 'media' and self.subcomponent:
             filename = self.subcomponent
             if self.format_kwarg:
                 filename += '.' + self.format_kwarg
@@ -123,7 +147,21 @@ class PublishedDocumentDetailView(DocumentViewMixin,
             # json description
             if (self.component, format) == ('main', 'json'):
                 serializer = self.get_serializer(document)
+                # use the request URI as the basis for this document
+                serializer.context['url'] = reverse(
+                    'published-document-detail',
+                    request=request,
+                    kwargs={'frbr_uri': self.frbr_uri.expression_uri()[1:]})
                 return Response(serializer.data)
+
+            # media attachments
+            if (self.component, format) == ('media', 'json'):
+                view = MediaViewSet()
+                view.kwargs = {'document_id': document.id}
+                view.request = request
+                view.document = document
+                view.initial(request)
+                return view.list(request)
 
             # the item we're interested in
             self.element = document.doc.components().get(self.component)
@@ -136,6 +174,12 @@ class PublishedDocumentDetailView(DocumentViewMixin,
     def list(self, request):
         """ Return details on many documents.
         """
+        # determine the country, so we can determine the primary language
+        try:
+            self.country = Country.for_code(self.kwargs['frbr_uri'][1:3])
+        except Country.DoesNotExist:
+            raise Http404
+
         if self.request.accepted_renderer.format == 'atom':
             # feeds show most recently changed first
             self.queryset = self.queryset.order_by('-updated_at')
@@ -233,7 +277,8 @@ class PublishedDocumentDetailView(DocumentViewMixin,
         """
         queryset = queryset\
             .latest_expression()\
-            .filter(frbr_uri__istartswith=self.kwargs['frbr_uri'])
+            .filter(frbr_uri__istartswith=self.kwargs['frbr_uri'])\
+            .filter(language__language__iso_639_2B=self.country.primary_language.code)
         if queryset.count() == 0:
             raise Http404
         return queryset
@@ -255,3 +300,36 @@ class PublishedDocumentDetailView(DocumentViewMixin,
             self.request.accepted_media_type = renderers.StaticHTMLRenderer.media_type
 
         return super(PublishedDocumentDetailView, self).handle_exception(exc)
+
+    def parse_frbr_uri(self, frbr_uri):
+        FrbrUri.default_language = None
+        self.frbr_uri = FrbrUri.parse(frbr_uri)
+
+        # validate the country and set the default language
+        try:
+            country = Country.for_frbr_uri(self.frbr_uri)
+            self.frbr_uri.default_language = country.primary_language.code
+        except Country.DoesNotExist:
+            raise Http404("Country %s from FRBR URI not found" % self.frbr_uri.country)
+
+        if not self.frbr_uri.language:
+            self.frbr_uri.language = self.frbr_uri.default_language
+
+
+class PublishedDocumentSearchView(PublicAPIMixin, SearchView):
+    """ Search published documents.
+    """
+    filter_fields = {
+        'frbr_uri': ['exact', 'startswith'],
+    }
+    serializer_class = PublishedDocumentSerializer
+    scope = 'works'
+
+    def get_queryset(self):
+        try:
+            country = Country.for_code(self.kwargs['country'])
+        except Country.DoesNotExist:
+            raise Http404
+
+        queryset = super(PublishedDocumentSearchView, self).get_queryset()
+        return queryset.published().filter(work__country=country)

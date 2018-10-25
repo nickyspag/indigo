@@ -16,6 +16,17 @@ def general(request):
     }
 
 
+def models(request):
+    """ Add some useful models to templates
+    """
+    from indigo_api.models import Country, Language
+
+    return {
+        'indigo_languages': Language.objects.select_related('language').prefetch_related('language'),
+        'indigo_countries': Country.objects.select_related('country').prefetch_related('localities', 'publication_set', 'country'),
+    }
+
+
 def serialise_user(request):
     data = {}
 

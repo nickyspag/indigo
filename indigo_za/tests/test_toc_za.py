@@ -5,15 +5,19 @@ from rest_framework.test import APITestCase
 
 from indigo_api.tests.fixtures import *  # noqa
 from indigo_za.toc import TOCBuilderZA
-from indigo_api.models import Document
+from indigo_api.models import Document, Work, Language
 
 
 class TOCBuilderZATestCase(APITestCase):
+    fixtures = ['countries', 'work']
+
     def setUp(self):
         self.toc = TOCBuilderZA()
+        self.work = Work.objects.get(id=1)
 
     def test_table_of_contents(self):
         d = Document()
+        d.work = self.work
         d.content = document_fixture(xml="""
         <body xmlns="http://www.akomantoso.org/2.0">
           <section id="section-1">
@@ -40,6 +44,7 @@ class TOCBuilderZATestCase(APITestCase):
           </chapter>
         </body>
         """)
+        d.language = Language.objects.get(language__pk='en')
         toc = d.table_of_contents()
         toc = [t.as_dict() for t in toc]
         self.maxDiff = None
@@ -59,6 +64,7 @@ class TOCBuilderZATestCase(APITestCase):
 
     def test_table_of_contents_afr(self):
         d = Document()
+        d.work = self.work
         d.content = document_fixture(xml="""
         <body xmlns="http://www.akomantoso.org/2.0">
           <section id="section-1">
@@ -85,7 +91,7 @@ class TOCBuilderZATestCase(APITestCase):
           </chapter>
         </body>
         """)
-        d.language = 'afr'
+        d.language = Language.objects.get(language__pk='af')
 
         toc = d.table_of_contents()
         toc = [t.as_dict() for t in toc]
@@ -106,6 +112,7 @@ class TOCBuilderZATestCase(APITestCase):
 
     def test_component_table_of_contents(self):
         d = Document()
+        d.work = self.work
         d.content = """<akomaNtoso xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.akomantoso.org/2.0" xsi:schemaLocation="http://www.akomantoso.org/2.0 akomantoso20.xsd">
   <act contains="singleVersion">
     <meta>
@@ -212,6 +219,7 @@ class TOCBuilderZATestCase(APITestCase):
   </components>
 </akomaNtoso>
         """
+        d.language = Language.objects.get(language__pk='en')
         toc = d.table_of_contents()
         toc = [t.as_dict() for t in toc]
         self.maxDiff = None
@@ -224,6 +232,7 @@ class TOCBuilderZATestCase(APITestCase):
 
     def test_preamble_and_friends_in_table_of_contents(self):
         d = Document()
+        d.work = self.work
         d.content = document_fixture(xml="""
         <coverpage>
             <content><p>hi</p></content>
@@ -241,6 +250,7 @@ class TOCBuilderZATestCase(APITestCase):
             <content><p>hi></p></content>
         </conclusions>
         """)
+        d.language = Language.objects.get(language__pk='en')
 
         toc = d.table_of_contents()
         toc = [t.as_dict() for t in toc]

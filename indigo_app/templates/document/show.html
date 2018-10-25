@@ -1,12 +1,11 @@
-{% extends "work/layout.html" %}
+{% extends "indigo_api/work_layout.html" %}
 {% load pipeline %}
 {% load static %}
 
 {% block title %}{{ document.title }}{% endblock %}
-{% block body-class %}{{ block.super }} sidebar-minimized {% if document.draft %}is-draft{% else %}is-published{% endif %} {% endblock %}
-
-{% block sidebar %}
-  {% include './_sidebar.html' %}
+{% block body-class %}{{ block.super }} sidebar-minimized
+  {% if document.draft %}is-draft{% else %}is-published{% endif %}
+  {% if work.repealed_date %}is-repealed{% endif %}
 {% endblock %}
 
 {% block breadcrumbs %}
@@ -19,6 +18,7 @@
     <span class="document-title">{{ document.title }}</span>
     <span class="badge badge-info if-published">published</span>
     <span class="badge badge-warning if-draft">draft</span>
+    <span class="badge badge-info if-repealed">repealed</span>
   </h5>
 
   <div class="document-toolbar-wrapper">
@@ -41,13 +41,14 @@
     {{/if}}
     <li class="breadcrumb-item"><a href="/works{{ work.frbr_uri }}/" class="work-frbr-uri">{{ document.frbr_uri }}</a></li>
     <li class="breadcrumb-item expressions">
-      <a href="#" data-toggle="dropdown" class="dropdown-toggle">{{ document.expression_date }}</a>
+      <a href="#" data-toggle="dropdown" class="dropdown-toggle">{{ document.expression_date }} · {{ document.language }}</a>
       <div class="dropdown-menu">
         {{#each expressions}}
           {{#each documents}}
             <a class="dropdown-item {{#if current}}disabled{{/if}}" href="/documents/{{ id }}">
               {{ ../date }}
-              {{#if current}} - this document{{/if}}
+              · {{ language }}
+              {{#if current}} – this document{{/if}}
             </a>
           {{/each}}
         {{/each}}
@@ -79,15 +80,10 @@
 
   {# include the document as JSON #}
   <script type="text/javascript">
-  // inject country code-to-name mappings into JS
-  window.Indigo.countries = {{ countries_json|safe }};
-
-  window.Indigo.Preloads.document_id = {{ document.id }};
+  window.Indigo.Preloads.document = {{ document_json|safe }};
   window.Indigo.Preloads.documentContent = {{ document_content_json|safe }};
-  window.Indigo.Preloads.works = {{ works_json|safe }};
   window.Indigo.Preloads.amendments = {{ amendments_json|safe }};
-
-  window.Indigo.Preloads.library = {{ documents_json|safe }};
+  window.Indigo.Preloads.expressions = {{ expressions_json|safe }};
 
   CKEDITOR_BASEPATH = '/static/ckeditor/';
   </script>

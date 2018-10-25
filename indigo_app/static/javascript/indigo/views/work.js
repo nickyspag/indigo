@@ -12,10 +12,10 @@
   /**
    * A view that lets a user create or edit a Work.
    */
-  Indigo.WorkView = Backbone.View.extend({
+  Indigo.WorkDetailView = Backbone.View.extend({
     el: '#edit-work-view',
     events: {
-      'click .btn.save': 'save',
+      'submit #edit-work-form': 'onSubmit',
       'click .btn.delete': 'deleteWork',
       'click .change-repeal': 'changeRepeal',
       'click .delete-repeal': 'deleteRepeal',
@@ -80,6 +80,7 @@
       this.commencingWorkTemplate = Handlebars.compile($(this.commencingWorkTemplate).html());
 
       this.model = new Indigo.Work(Indigo.Preloads.work, {parse: true});
+      this.originalFrbrUri = this.model.get('frbr_uri');
       this.listenTo(this.model, 'change:country', this.updatePublicationOptions);
       this.listenTo(this.model, 'change:country change:locality', this.updateBreadcrumb);
       this.listenTo(this.model, 'change:title change:frbr_uri', this.updatePageTitle);
@@ -93,9 +94,6 @@
       this.listenTo(this.model, 'change:country change:publication_date change:publication_name change:publication_number',
                     _.debounce(this.publicationChanged, 1000));
 
-      // prevent the user from navigating away without saving changes
-      $(window).on('beforeunload', _.bind(this.windowUnloading, this));
-
       this.model.updateFrbrUri();
       this.listenToOnce(Indigo.works, 'sync', this.parentChanged);
       this.updatePublicationOptions();
@@ -107,7 +105,11 @@
     },
 
     updatePageTitle: function() {
-      document.title = this.model.get('title') + ' - Indigo';
+      if (this.model.get('title')) {
+        document.title = this.model.get('title') + ' – Indigo';
+      } else {
+        document.title = 'New Work – Indigo';
+      }
       if (!this.model.isNew()) $('.workspace-header h4, .work-title').text(this.model.get('title'));
       this.$('.work-frbr-uri').text(this.model.get('frbr_uri'));
     },
@@ -150,15 +152,21 @@
       this.$('.btn.save').attr('disabled', !this.dirty || !this.model.isValid());
     },
 
+    onSubmit: function(e) {
+      e.preventDefault();
+      this.save();
+    },
+
     save: function() {
       var self = this,
-          isNew = this.model.isNew();
+          isNew = this.model.isNew(),
+          frbrUriChanged = this.model.get('frbr_uri') != this.originalFrbrUri;
 
       this.model.save().done(function() {
-        if (isNew) {
+        if (isNew || frbrUriChanged) {
           // redirect
           Indigo.progressView.peg();
-          window.location = '/works' + self.model.get('frbr_uri') + '/';
+          window.location = '/works' + self.model.get('frbr_uri') + '/edit/';
         }
       });
     },
@@ -177,13 +185,12 @@
     },
 
     changeRepeal: function() {
-      var chooser = new Indigo.WorkChooserView({}),
+      var chooser = new Indigo.WorkChooserView({country: this.model.get('country')}),
           self = this;
 
       if (this.model.get('repealed_by')) {
         chooser.choose(Indigo.works.get(this.model.get('repealed_by')));
       }
-      chooser.setFilters({country: this.model.get('country')});
       chooser.showModal().done(function(chosen) {
         if (chosen) {
           self.model.set('repealed_by', chosen);
@@ -213,13 +220,12 @@
     },
 
     changeCommencingWork: function() {
-      var chooser = new Indigo.WorkChooserView({}),
+      var chooser = new Indigo.WorkChooserView({country: this.model.get('country')}),
           self = this;
 
       if (this.model.get('commencing_work')) {
         chooser.choose(Indigo.works.get(this.model.get('commencing_work')));
       }
-      chooser.setFilters({country: this.model.get('country')});
       chooser.showModal().done(function(chosen) {
         if (chosen) {
           self.model.set('commencing_work', chosen);
@@ -240,13 +246,12 @@
     },
 
     changeParent: function() {
-      var chooser = new Indigo.WorkChooserView({}),
+      var chooser = new Indigo.WorkChooserView({country: this.model.get('country')}),
           self = this;
 
       if (this.model.get('parent_work')) {
         chooser.choose(this.model.get('parent_work'));
       }
-      chooser.setFilters({country: this.model.get('country')});
       chooser.showModal().done(function(chosen) {
         if (chosen) {
           self.model.set('parent_work', chosen);
@@ -309,11 +314,8 @@
       }
     },
 
-    windowUnloading: function(e) {
-      if (this.dirty) {
-        e.preventDefault();
-        return 'You will lose your changes!';
-      }
+    isDirty: function() {
+      return this.dirty;
     },
   });
 })(window);
